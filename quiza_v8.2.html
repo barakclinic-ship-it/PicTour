@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quiza v8.1</title>
+<title>Quiza v8.2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
@@ -91,7 +91,7 @@ header{width:100%;max-width:700px;padding:14px 20px 0;display:flex;align-items:c
     <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:3px"><img id="home-icon-img" src="" alt="" style="width:22px;height:22px;object-fit:contain;opacity:0.5"></button>
   </div>
   <div style="display:flex;align-items:flex-end;gap:6px">
-    <span style="font-size:10px;opacity:0.4;font-family:'Heebo',sans-serif;line-height:1;padding-bottom:3px">v8.1</span>
+    <span style="font-size:10px;opacity:0.4;font-family:'Heebo',sans-serif;line-height:1;padding-bottom:3px">v8.2</span>
     <span style="font-size:15px;font-weight:700;letter-spacing:0.05em;line-height:1;padding-bottom:2px">Quiza</span>
   </div>
 </header>
@@ -216,6 +216,8 @@ document.getElementById('home-icon-img').src = 'data:image/png;base64,iVBORw0KGg
 // יש לעדכן כתובת זו לכתובת ה-GitHub Pages שלך, לדוגמה:
 // 'https://USERNAME.github.io/quiza-anatomy'
 const ONLINE_BASE_URL = 'https://barakclinic-ship-it.github.io/quiza-anatomy';
+const GITHUB_API = 'https://api.github.com/repos/barakclinic-ship-it/quiza-anatomy/contents/images';
+const VALID_EXT = /\.(jpg|jpeg|png|gif|webp)$/i;
 let allCards = [], excelCards = [], dataSource = 'images';
 let deck = [], repeatQueue = [], current = null;
 let seen = 0, roundTotal = 0;
@@ -280,7 +282,7 @@ function loadFiles(files) {
   }
 }
 
-// ── ONLINE LOADING (GitHub) ──
+// ── ONLINE LOADING (GitHub API auto-scan) ──
 let onlineManifest = null;
 
 async function loadFromOnline() {
@@ -289,24 +291,63 @@ async function loadFromOnline() {
   if (!dz) return;
   dz.onclick = null;
   dz.style.cursor = 'default';
-  if (statusEl) { statusEl.textContent = 'טוען רשימת תמונות...'; statusEl.style.color = 'var(--muted)'; }
+  if (statusEl) { statusEl.textContent = 'סורק תמונות...'; statusEl.style.color = 'var(--muted)'; }
 
   try {
-    const manifestUrl = ONLINE_BASE_URL.replace(/\/$/, '') + '/manifest.json';
-    const res = await fetch(manifestUrl, {cache: 'no-store'});
-    if (!res.ok) throw new Error('network error: ' + res.status);
-    const data = await res.json();
-    if (!data.topics || !Array.isArray(data.topics) || !data.topics.length) {
-      throw new Error('manifest empty or wrong format');
+    // סרוק את תיקיית images דרך GitHub API
+    const res = await fetch(GITHUB_API, {headers: {'Accept': 'application/vnd.github.v3+json'}});
+    if (!res.ok) throw new Error('GitHub API error: ' + res.status);
+    const items = await res.json();
+
+    // מצא תת-תיקיות ותמונות
+    const subdirs = items.filter(i => i.type === 'dir');
+    const rootFiles = items.filter(i => i.type === 'file' && VALID_EXT.test(i.name));
+
+    const topics = [];
+
+    // תמונות בשורש images/ → נושא "General"
+    if (rootFiles.length) {
+      topics.push({
+        name: 'General',
+        images: rootFiles.map(f => ({
+          file: f.name,
+          name: f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').trim()
+        }))
+      });
     }
-    onlineManifest = data;
+
+    // תת-תיקיות — טען כל אחת
+    for (const dir of subdirs) {
+      const dirRes = await fetch(dir.url, {headers: {'Accept': 'application/vnd.github.v3+json'}});
+      if (!dirRes.ok) continue;
+      const dirItems = await dirRes.json();
+      const files = dirItems.filter(i => i.type === 'file' && VALID_EXT.test(i.name));
+      if (files.length) {
+        topics.push({
+          name: dir.name,
+          images: files.map(f => ({
+            file: dir.name + '/' + f.name,
+            name: f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').trim()
+          }))
+        });
+      }
+    }
+
+    if (!topics.length) throw new Error('לא נמצאו תמונות');
+
+    onlineManifest = {topics};
     dataSource = 'images';
+
+    const totalImages = topics.reduce((s, t) => s + t.images.length, 0);
     dz.style.borderStyle = 'solid';
-    const totalImages = data.topics.reduce((s, t) => s + t.images.length, 0);
     dz.innerHTML = `
       <div style="font-size:28px;color:var(--accent2)">✓</div>
-      <h2 style="color:var(--accent2);font-size:14px">${totalImages} תמונות נטענו</h2>
-      <button onclick="event.stopPropagation();showTopicSelector()" style="margin-top:6px;padding:6px 18px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:'Heebo',sans-serif;font-size:13px;font-weight:700;cursor:pointer">בחר נושא</button>`;
+      <h2 style="color:var(--accent2);font-size:14px">${totalImages} תמונות ב-${topics.length} נושאים</h2>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button onclick="event.stopPropagation();showTopicSelector()" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:'Heebo',sans-serif;font-size:13px;font-weight:700;cursor:pointer">בחר נושא</button>
+        <button onclick="event.stopPropagation();loadFromOnline()" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-family:'Heebo',sans-serif;font-size:12px;color:var(--muted);cursor:pointer">רענן</button>
+      </div>`;
+
     showTopicSelector();
   } catch(err) {
     if (statusEl) {
@@ -315,6 +356,10 @@ async function loadFromOnline() {
     }
     dz.onclick = loadFromOnline;
     dz.style.cursor = 'pointer';
+    dz.innerHTML = `
+      <div style="color:var(--border)"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+      <h2 style="font-size:14px">טען חבילת תמונות מהאינטרנט</h2>
+      <p id="online-status" style="color:var(--wrong)">${err.message}</p>`;
   }
 }
 
