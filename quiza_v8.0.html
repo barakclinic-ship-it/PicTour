@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quiza v8.0</title>
+<title>Quiza v8.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
@@ -80,6 +80,8 @@ header{width:100%;max-width:700px;padding:14px 20px 0;display:flex;align-items:c
   transition: color 0.4s ease;
 }
 .tutorial-hint.tapped{ color: var(--muted); }
+.topic-btn{width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:var(--surface);font-family:'Heebo',sans-serif;font-size:14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;text-align:right;}
+.topic-btn:hover{background:var(--surface2);}
 </style>
 </head>
 <body>
@@ -89,7 +91,7 @@ header{width:100%;max-width:700px;padding:14px 20px 0;display:flex;align-items:c
     <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:3px"><img id="home-icon-img" src="" alt="" style="width:22px;height:22px;object-fit:contain;opacity:0.5"></button>
   </div>
   <div style="display:flex;align-items:flex-end;gap:6px">
-    <span style="font-size:10px;opacity:0.4;font-family:'Heebo',sans-serif;line-height:1;padding-bottom:3px">v8.0</span>
+    <span style="font-size:10px;opacity:0.4;font-family:'Heebo',sans-serif;line-height:1;padding-bottom:3px">v8.1</span>
     <span style="font-size:15px;font-weight:700;letter-spacing:0.05em;line-height:1;padding-bottom:2px">Quiza</span>
   </div>
 </header>
@@ -172,6 +174,15 @@ header{width:100%;max-width:700px;padding:14px 20px 0;display:flex;align-items:c
   <div class="done-sub" id="done-sub"></div>
   <div id="done-history" style="width:100%;max-width:320px;max-height:180px;overflow-y:auto;margin-bottom:4px"></div>
   <div id="done-cta" style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:280px"></div>
+</div>
+
+<!-- TOPIC SELECTOR POPUP -->
+<div id="topic-selector" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--surface);border-radius:20px;padding:24px;max-width:320px;width:100%;display:flex;flex-direction:column;gap:10px;max-height:80vh;overflow-y:auto">
+    <div style="font-size:13px;color:var(--muted);letter-spacing:0.08em;text-align:center">בחר נושא</div>
+    <div id="topic-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button onclick="document.getElementById('topic-selector').style.display='none'" style="padding:8px;border-radius:10px;border:1px solid var(--border);background:none;font-family:'Heebo',sans-serif;font-size:13px;color:var(--muted);cursor:pointer;margin-top:4px">ביטול</button>
+  </div>
 </div>
 
 <!-- QUIZ TYPE POPUP -->
@@ -270,6 +281,8 @@ function loadFiles(files) {
 }
 
 // ── ONLINE LOADING (GitHub) ──
+let onlineManifest = null;
+
 async function loadFromOnline() {
   const dz = document.getElementById('online-drop-zone');
   const statusEl = document.getElementById('online-status');
@@ -281,38 +294,68 @@ async function loadFromOnline() {
   try {
     const manifestUrl = ONLINE_BASE_URL.replace(/\/$/, '') + '/manifest.json';
     const res = await fetch(manifestUrl, {cache: 'no-store'});
-    if (!res.ok) throw new Error('שגיאת רשת: ' + res.status);
+    if (!res.ok) throw new Error('network error: ' + res.status);
     const data = await res.json();
-    if (!data.images || !Array.isArray(data.images) || !data.images.length) {
-      throw new Error('הרשימה ריקה');
+    if (!data.topics || !Array.isArray(data.topics) || !data.topics.length) {
+      throw new Error('manifest empty or wrong format');
     }
-
-    const baseImgUrl = ONLINE_BASE_URL.replace(/\/$/, '') + '/images/';
-    const newCards = data.images.map(item => ({
-      name: item.name || item.file.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
-      url: baseImgUrl + encodeURIComponent(item.file)
-    }));
-
-    allCards = newCards;
+    onlineManifest = data;
     dataSource = 'images';
-
     dz.style.borderStyle = 'solid';
+    const totalImages = data.topics.reduce((s, t) => s + t.images.length, 0);
     dz.innerHTML = `
-      <div style="font-size:36px;color:var(--accent2)">✓</div>
-      <h2 style="color:var(--accent2);font-size:15px">${allCards.length} תמונות נטענו מהאינטרנט</h2>
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <button onclick="event.stopPropagation();location.reload()" style="padding:4px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-family:'Heebo',sans-serif;font-size:11px;color:var(--muted);cursor:pointer">רענון</button>
-      </div>`;
-    const lmr = document.getElementById('load-mode-row');
-    if (lmr) lmr.style.display = 'flex';
+      <div style="font-size:28px;color:var(--accent2)">✓</div>
+      <h2 style="color:var(--accent2);font-size:14px">${totalImages} תמונות נטענו</h2>
+      <button onclick="event.stopPropagation();showTopicSelector()" style="margin-top:6px;padding:6px 18px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-family:'Heebo',sans-serif;font-size:13px;font-weight:700;cursor:pointer">בחר נושא</button>`;
+    showTopicSelector();
   } catch(err) {
     if (statusEl) {
-      statusEl.textContent = 'שגיאה בטעינה: ' + err.message;
+      statusEl.textContent = 'שגיאה: ' + err.message;
       statusEl.style.color = 'var(--wrong)';
     }
     dz.onclick = loadFromOnline;
     dz.style.cursor = 'pointer';
   }
+}
+
+function showTopicSelector() {
+  if (!onlineManifest) return;
+  const popup = document.getElementById('topic-selector');
+  if (!popup) return;
+  const list = document.getElementById('topic-list');
+  const totalImages = onlineManifest.topics.reduce((s, t) => s + t.images.length, 0);
+  list.innerHTML =
+    `<button class="topic-btn" onclick="selectTopic('__all__')">
+      <span style="font-weight:700">הכל</span>
+      <span style="font-size:11px;color:var(--muted)">${totalImages} תמונות</span>
+    </button>` +
+    onlineManifest.topics.map(t =>
+      `<button class="topic-btn" onclick="selectTopic('${t.name.replace(/'/g,"\\'")}')">
+        <span style="font-weight:700">${t.name}</span>
+        <span style="font-size:11px;color:var(--muted)">${t.images.length} תמונות</span>
+      </button>`
+    ).join('');
+  popup.style.display = 'flex';
+}
+
+function selectTopic(topicName) {
+  if (!onlineManifest) return;
+  const baseImgUrl = ONLINE_BASE_URL.replace(/\/$/, '') + '/images/';
+  let images;
+  if (topicName === '__all__') {
+    images = onlineManifest.topics.flatMap(t => t.images.map(img => ({...img, topic: t.name})));
+  } else {
+    const topic = onlineManifest.topics.find(t => t.name === topicName);
+    if (!topic) return;
+    images = topic.images;
+  }
+  allCards = images.map(item => ({
+    name: item.name,
+    url: baseImgUrl + item.file.split('/').map(encodeURIComponent).join('/')
+  }));
+  document.getElementById('topic-selector').style.display = 'none';
+  const lmr = document.getElementById('load-mode-row');
+  if (lmr) lmr.style.display = 'flex';
 }
 
 function loadExcel(file) {
