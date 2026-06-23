@@ -1,74 +1,82 @@
 """
-סקריפט ליצירת manifest.json מתוך תיקיית תמונות.
+סקריפט ליצירת manifest.json מתוך תיקיית images עם תת-תיקיות לפי נושא.
+
+מבנה תיקיות לדוגמה:
+  quiza-anatomy/
+    generate_manifest.py
+    images/
+      nerves/
+        ulnar nerve.png
+        median nerve.png
+      muscles/
+        soleus.PNG
+        femoral artery.PNG
 
 שימוש:
-1. שים את הסקריפט הזה בתוך התיקייה שמכילה את תיקיית "images" עם התמונות שלך.
-   מבנה לדוגמה:
-     quiza-anatomy/
-       generate_manifest.py   <- הסקריפט הזה
-       images/
-         median_nerve.jpg
-         ulnar_nerve_2.jpg
-         ...
+  python3 generate_manifest.py
 
-2. הרץ בטרמינל:
-     python3 generate_manifest.py
-
-3. יווצר קובץ manifest.json בתיקייה הראשית (quiza-anatomy/).
-   צריך להעלות אותו ל-GitHub יחד עם תיקיית images.
-
-4. שם התשובה שמוצג בחידון נגזר משם הקובץ:
-   - מחליף קווים תחתונים/מקפים ברווחים
-   - מסיר את הסיומת (.jpg, .png וכו')
-   לדוגמה: "median_nerve_2.jpg" -> "median nerve 2"
-
-   אם אתה רוצה לשנות שם תצוגה בלי לשנות את שם הקובץ,
-   אפשר לערוך את manifest.json ישירות אחרי היצירה ולשנות את השדה "name".
-
-5. כדי שכל שם קובץ יעבוד טוב בקישור באינטרנט (URL), מומלץ:
-   - להשתמש רק באנגלית, מספרים, קווים תחתונים ומקפים בשמות הקבצים
-   - להימנע מרווחים ועברית בשם הקובץ עצמו (אפשר לשים את העברית רק
-     בתוך manifest.json בשדה "name" אם תרצה תשובה בעברית)
+יווצר manifest.json בתיקייה הראשית.
 """
 
-import json
-import os
-import sys
+import json, os, sys
 
 IMAGES_DIR = "images"
 OUTPUT_FILE = "manifest.json"
 VALID_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
-
 def make_name(filename):
     base = os.path.splitext(filename)[0]
-    name = base.replace("_", " ").replace("-", " ")
-    return name.strip()
-
+    return base.replace("_", " ").replace("-", " ").strip()
 
 def main():
     if not os.path.isdir(IMAGES_DIR):
-        print(f"שגיאה: לא נמצאה תיקייה '{IMAGES_DIR}' באותה תיקייה כמו הסקריפט.")
+        print(f"Error: folder '{IMAGES_DIR}' not found.")
         sys.exit(1)
 
-    files = sorted(
-        f for f in os.listdir(IMAGES_DIR)
-        if os.path.splitext(f)[1].lower() in VALID_EXT
+    topics = []
+
+    # סרוק תת-תיקיות (נושאים)
+    subdirs = sorted(
+        d for d in os.listdir(IMAGES_DIR)
+        if os.path.isdir(os.path.join(IMAGES_DIR, d)) and not d.startswith('.')
     )
 
-    if not files:
-        print(f"שגיאה: לא נמצאו תמונות בתיקייה '{IMAGES_DIR}'.")
+    # תמונות ישירות בתוך images/ (בלי תת-תיקייה) → נושא "General"
+    root_files = sorted(
+        f for f in os.listdir(IMAGES_DIR)
+        if os.path.isfile(os.path.join(IMAGES_DIR, f))
+        and os.path.splitext(f)[1].lower() in VALID_EXT
+    )
+    if root_files:
+        topics.append({
+            "name": "General",
+            "images": [{"file": f, "name": make_name(f)} for f in root_files]
+        })
+
+    for subdir in subdirs:
+        subdir_path = os.path.join(IMAGES_DIR, subdir)
+        files = sorted(
+            f for f in os.listdir(subdir_path)
+            if os.path.isfile(os.path.join(subdir_path, f))
+            and os.path.splitext(f)[1].lower() in VALID_EXT
+        )
+        if files:
+            topics.append({
+                "name": subdir,
+                "images": [{"file": f"{subdir}/{f}", "name": make_name(f)} for f in files]
+            })
+
+    if not topics:
+        print("Error: no images found.")
         sys.exit(1)
 
-    images = [{"file": f, "name": make_name(f)} for f in files]
-
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump({"images": images}, f, ensure_ascii=False, indent=2)
+        json.dump({"topics": topics}, f, ensure_ascii=False, indent=2)
 
-    print(f"נוצר {OUTPUT_FILE} עם {len(images)} תמונות.")
-    print("דוגמה לרשומה ראשונה:")
-    print(json.dumps(images[0], ensure_ascii=False, indent=2))
-
+    total = sum(len(t["images"]) for t in topics)
+    print(f"Created {OUTPUT_FILE}: {len(topics)} topics, {total} images total.")
+    for t in topics:
+        print(f"  - {t['name']}: {len(t['images'])} images")
 
 if __name__ == "__main__":
     main()
