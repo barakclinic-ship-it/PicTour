@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v1.2</title>
+<title>PicTour v1.3</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -238,13 +238,17 @@ header{
 }
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
 @media(max-width:500px){.quiz-grid{grid-template-columns:1fr;}}
+#flip-slider::-webkit-slider-thumb{-webkit-appearance:none;width:32px;height:32px;border-radius:50%;background:#111;cursor:pointer;margin-top:-10px;}
+#flip-slider::-moz-range-thumb{width:32px;height:32px;border-radius:50%;background:#111;cursor:pointer;border:none;}
+#flip-slider::-webkit-slider-runnable-track{height:12px;border-radius:6px;background:#e0e0e0;}
+#flip-slider::-moz-range-track{height:12px;border-radius:6px;background:#e0e0e0;}
 </style>
 </head>
 <body>
 
 <header style="direction:ltr;">
   <div style="display:flex;align-items:baseline;gap:0">
-    <span class="app-title">PicTour</span><span class="app-version">v1.2</span>
+    <span class="app-title">PicTour</span><span class="app-version">v1.3</span>
   </div>
   <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:4px;opacity:0.35;">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
@@ -332,10 +336,11 @@ header{
   </div>
   <div class="hint-row" id="hint-row">לחץ פעמיים להגדלה</div>
   <!-- FLIP SLIDER -->
-  <div id="flip-slider-wrap" style="display:none;width:100%;padding:2px 0;flex-shrink:0;">
-    <div id="flip-slider-track" style="width:100%;height:36px;background:#f0f0f0;border-radius:18px;position:relative;touch-action:none;user-select:none;">
-      <div id="flip-slider-thumb" style="position:absolute;top:4px;left:4px;width:28px;height:28px;background:#111;border-radius:50%;will-change:left;"></div>
-    </div>
+  <div id="flip-slider-wrap" style="display:none;width:100%;padding:4px 0;flex-shrink:0;">
+    <input type="range" id="flip-slider" min="0" max="100" value="0"
+      style="width:100%;height:36px;-webkit-appearance:none;appearance:none;background:#f0f0f0;border-radius:18px;outline:none;cursor:pointer;"
+      oninput="onSliderMove(this.value)"
+      onchange="onSliderRelease(this.value)">
   </div>
   <div class="quiz-grid" id="quiz-options" style="display:none"></div>
   <!-- OPEN ANSWER -->
@@ -934,91 +939,38 @@ if (hintShown) {
 }
 
 // ── FLIP SLIDER ──
-// thumb at left = image, drag right = answer
 function resetSlider() {
-  const thumb = document.getElementById('flip-slider-thumb');
-  if (!thumb) return;
+  const s = document.getElementById('flip-slider');
+  if (!s) return;
   const isFlipped = document.getElementById('card-wrap').classList.contains('flipped');
-  const track = document.getElementById('flip-slider-track');
-  const tw = track ? (track.getBoundingClientRect().width || track.offsetWidth || 300) : 300;
-  const maxLeft = tw - 28 - 4;
-  thumb.style.transition = 'left 0.3s';
-  thumb.style.left = isFlipped ? maxLeft + 'px' : '4px';
-  thumb.style.background = '#111';
-  setTimeout(() => { if (thumb) thumb.style.transition = ''; }, 300);
+  s.value = isFlipped ? 100 : 0;
 }
 
-(function() {
-  let dragging = false, startX = 0, startLeft = 0;
-
-  function getTrack() { return document.getElementById('flip-slider-track'); }
-  function getThumb() { return document.getElementById('flip-slider-thumb'); }
-  function getTW() {
-    const t = getTrack();
-    if (!t) return 300;
-    const w = t.getBoundingClientRect().width;
-    return w > 0 ? w : t.offsetWidth || 300;
+function onSliderMove(val) {
+  const s = document.getElementById('flip-slider');
+  if (!s) return;
+  const pct = parseInt(val);
+  if (pct > 50) {
+    s.style.setProperty('--thumb-color', `rgb(${Math.round(17+pct*0.6)},${Math.round(17+pct*1.54)},17)`);
+  } else {
+    s.style.setProperty('--thumb-color', '#111');
   }
+}
 
-  function startDrag(clientX) {
-    if (mode !== 'flash') return;
-    const thumb = getThumb(); if (!thumb) return;
-    dragging = true;
-    startX = clientX;
-    startLeft = parseFloat(thumb.style.left) || 4;
-    thumb.style.transition = '';
+function onSliderRelease(val) {
+  const pct = parseInt(val);
+  const cw = document.getElementById('card-wrap');
+  if (pct >= 75) {
+    cw.classList.add('flipped');
+    setTimeout(resetSlider, 50);
+  } else if (pct <= 25) {
+    cw.classList.remove('flipped');
+    setTimeout(resetSlider, 50);
+  } else {
+    setTimeout(resetSlider, 50);
   }
+}
 
-  function moveDrag(clientX) {
-    if (!dragging) return;
-    const thumb = getThumb(); if (!thumb) return;
-    const tw = getTW();
-    const maxLeft = tw - 28 - 4;
-    const left = Math.max(4, Math.min(maxLeft, startLeft + (clientX - startX)));
-    thumb.style.left = left + 'px';
-    const pct = maxLeft > 0 ? (left - 4) / (maxLeft - 4) : 0;
-    if (pct > 0.5) {
-      thumb.style.background = `rgb(${Math.round(17+pct*60)},${Math.round(17+pct*154)},17)`;
-    } else if (pct < 0.3) {
-      thumb.style.background = `rgb(${Math.round(17+(0.3-pct)*180)},17,17)`;
-    } else {
-      thumb.style.background = '#111';
-    }
-    if (pct >= 0.92) endDrag('answer');
-    if (pct <= 0.08) endDrag('image');
-  }
-
-  function endDrag(force) {
-    if (!dragging && !force) return;
-    dragging = false;
-    const thumb = getThumb(); if (!thumb) return;
-    const tw = getTW();
-    const maxLeft = tw - 28 - 4;
-    const curLeft = parseFloat(thumb.style.left) || 4;
-    const pct = maxLeft > 0 ? (curLeft - 4) / (maxLeft - 4) : 0;
-    if (force === 'answer' || pct >= 0.75) {
-      thumb.style.transition = 'left 0.15s';
-      thumb.style.left = maxLeft + 'px';
-      setTimeout(() => { document.getElementById('card-wrap').classList.add('flipped'); resetSlider(); }, 150);
-    } else if (force === 'image' || pct <= 0.25) {
-      thumb.style.transition = 'left 0.15s';
-      thumb.style.left = '4px';
-      setTimeout(() => { document.getElementById('card-wrap').classList.remove('flipped'); resetSlider(); }, 150);
-    } else {
-      resetSlider();
-    }
-  }
-
-  const track = document.getElementById('flip-slider-track');
-  if (track) {
-    track.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX); }, {passive:true});
-    track.addEventListener('touchmove', e => { e.preventDefault(); moveDrag(e.touches[0].clientX); }, {passive:false});
-    track.addEventListener('touchend', () => { endDrag(); }, {passive:true});
-    track.addEventListener('mousedown', e => { startDrag(e.clientX); });
-  }
-  document.addEventListener('mousemove', e => { if(dragging) moveDrag(e.clientX); });
-  document.addEventListener('mouseup', () => { if(dragging) endDrag(); });
-})();
 
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
