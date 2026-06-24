@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v0.8</title>
+<title>PicTour v0.9</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -241,7 +241,7 @@ header{
 
 <header style="direction:ltr;">
   <div style="display:flex;align-items:baseline;gap:0">
-    <span class="app-title">PicTour</span><span class="app-version">v0.8</span>
+    <span class="app-title">PicTour</span><span class="app-version">v0.9</span>
   </div>
   <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:4px;opacity:0.35;">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
@@ -869,7 +869,9 @@ function resetSlider() {
     dragging = true;
     startX = clientX;
     tw = track.getBoundingClientRect().width;
-    startLeft = parseFloat(thumb.style.left) || 4;
+    if (!tw) tw = 300;
+    startLeft = parseFloat(thumb.style.left);
+    if (isNaN(startLeft)) startLeft = 4;
     thumb.style.transition = '';
   }
 
@@ -879,10 +881,15 @@ function resetSlider() {
     const left = Math.max(4, Math.min(maxLeft, startLeft + (clientX - startX)));
     thumb.style.left = left + 'px';
     const pct = (left - 4) / (maxLeft - 4);
-    thumb.style.background = pct > 0.5
-      ? `rgb(${Math.round(17+pct*60)},${Math.round(17+pct*154)},17)`
-      : '#111';
+    if (pct > 0.5) {
+      thumb.style.background = `rgb(${Math.round(17+pct*60)},${Math.round(17+pct*154)},17)`;
+    } else if (pct < 0.3) {
+      thumb.style.background = `rgb(${Math.round(17+(0.3-pct)*180)},17,17)`;
+    } else {
+      thumb.style.background = '#111';
+    }
     if (pct >= 0.92) endDrag('answer');
+    if (pct <= 0.08) endDrag('image');
   }
 
   function endDrag(force) {
@@ -895,6 +902,10 @@ function resetSlider() {
       thumb.style.transition = 'left 0.15s';
       thumb.style.left = maxLeft + 'px';
       setTimeout(() => { document.getElementById('card-wrap').classList.add('flipped'); resetSlider(); }, 150);
+    } else if (force === 'image' || pct <= 0.25) {
+      thumb.style.transition = 'left 0.15s';
+      thumb.style.left = '4px';
+      setTimeout(() => { document.getElementById('card-wrap').classList.remove('flipped'); resetSlider(); }, 150);
     } else {
       resetSlider();
     }
