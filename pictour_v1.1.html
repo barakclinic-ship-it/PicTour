@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v0.9</title>
+<title>PicTour v1.1</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -182,6 +182,9 @@ header{
 .btn-card.good{border-color:var(--neon-green);color:#1a8a00;}
 .btn-card.bad{border-color:var(--border2);color:var(--muted);}
 .quiz-grid{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:5px;flex-shrink:0;}
+.ac-item{padding:10px 14px;font-family:'Heebo',sans-serif;font-size:14px;cursor:pointer;text-align:right;border-bottom:1px solid var(--border);}
+.ac-item:last-child{border-bottom:none;}
+.ac-item:hover,.ac-item.selected{background:var(--surface);}
 .quiz-opt{
   padding:8px 4px;border-radius:8px;
   border:1.5px solid var(--border);background:var(--bg);
@@ -241,7 +244,7 @@ header{
 
 <header style="direction:ltr;">
   <div style="display:flex;align-items:baseline;gap:0">
-    <span class="app-title">PicTour</span><span class="app-version">v0.9</span>
+    <span class="app-title">PicTour</span><span class="app-version">v1.1</span>
   </div>
   <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:4px;opacity:0.35;">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
@@ -335,6 +338,15 @@ header{
     </div>
   </div>
   <div class="quiz-grid" id="quiz-options" style="display:none"></div>
+  <!-- OPEN ANSWER -->
+  <div id="open-answer-area" style="display:none;width:100%;flex-direction:column;gap:6px;flex-shrink:0;">
+    <div style="position:relative;width:100%;">
+      <div id="autocomplete-list" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:10px;margin-bottom:4px;max-height:160px;overflow-y:auto;z-index:50;box-shadow:0 -4px 12px rgba(0,0,0,0.08);"></div>
+      <input id="open-answer-input" type="text" placeholder="הקלד תשובה..." autocomplete="off"
+        style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-family:'Heebo',sans-serif;font-size:15px;color:var(--text);outline:none;text-align:right;">
+    </div>
+    <div id="open-answer-feedback" style="min-height:16px;font-size:12px;text-align:center;color:var(--muted);"></div>
+  </div>
   <div class="flash-actions" id="flash-actions">
     <button class="btn-card bad" onclick="markWrong()">שאל שוב</button>
     <button class="btn-card good" onclick="markCorrect()">✓ ידעתי</button>
@@ -524,6 +536,7 @@ function showCard() {
 
   if (mode === 'flash') {
     document.getElementById('quiz-options').style.display = 'none';
+    document.getElementById('open-answer-area').style.display = 'none';
     document.getElementById('flash-actions').style.display = 'flex';
     document.getElementById('quiz-actions').style.display = 'none';
     document.getElementById('score-row').style.display = 'none';
@@ -538,8 +551,19 @@ function showCard() {
     const cb = document.getElementById('confirm-btn');
     cb.className = 'btn-continue';
     cb.textContent = 'המשך'; cb.onclick = confirmQuiz;
-    buildQuizOptions();
-    document.getElementById('quiz-options').style.display = 'grid';
+
+    if (quizType === 'open') {
+      document.getElementById('quiz-options').style.display = 'none';
+      document.getElementById('open-answer-area').style.display = 'flex';
+      document.getElementById('open-answer-input').value = '';
+      document.getElementById('open-answer-feedback').textContent = '';
+      document.getElementById('autocomplete-list').style.display = 'none';
+      setupAutocomplete(cb);
+    } else {
+      document.getElementById('open-answer-area').style.display = 'none';
+      buildQuizOptions();
+      document.getElementById('quiz-options').style.display = 'grid';
+    }
   }
 }
 
@@ -549,6 +573,43 @@ function skipCard() {
   if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
   const wp = document.getElementById('wrong-popup'); if (wp) wp.remove();
   deck.push(current); pickNext();
+}
+
+// ── OPEN QUIZ ──
+function setupAutocomplete(cb) {
+  const input = document.getElementById('open-answer-input');
+  const list = document.getElementById('autocomplete-list');
+  let acSel = -1;
+
+  input.oninput = () => {
+    const val = input.value.trim().toLowerCase();
+    acSel = -1;
+    if (!val) { list.style.display = 'none'; cb.className = 'btn-continue'; return; }
+    const matches = [...new Set(allCards.map(c => c.name))]
+      .filter(n => n.toLowerCase().includes(val)).slice(0, 8);
+    if (!matches.length) { list.style.display = 'none'; }
+    else {
+      list.innerHTML = matches.map(m => {
+        const hi = m.replace(new RegExp(val.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'), s => `<strong>${s}</strong>`);
+        return `<div class="ac-item" onclick="selectAC('${m.replace(/'/g,"\\'")}')">${hi}</div>`;
+      }).join('');
+      list.style.display = 'block';
+    }
+    cb.className = val.length > 0 ? 'btn-continue ready' : 'btn-continue';
+  };
+
+  input.onkeydown = e => {
+    const items = list.querySelectorAll('.ac-item');
+    if (e.key==='ArrowDown'){acSel=Math.min(acSel+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('selected',i===acSel));e.preventDefault();}
+    else if(e.key==='ArrowUp'){acSel=Math.max(acSel-1,-1);items.forEach((el,i)=>el.classList.toggle('selected',i===acSel));e.preventDefault();}
+    else if(e.key==='Enter'){if(acSel>=0)items[acSel].click();else{list.style.display='none';confirmQuiz();}}
+  };
+}
+
+function selectAC(val) {
+  document.getElementById('open-answer-input').value = val;
+  document.getElementById('autocomplete-list').style.display = 'none';
+  document.getElementById('confirm-btn').className = 'btn-continue ready';
 }
 
 // ── QUIZ OPTIONS ──
@@ -581,7 +642,9 @@ function buildQuizOptions() {
 }
 
 function confirmQuiz() {
-  if (quizAnswered || !selectedQuizBtn) return;
+  if (quizAnswered) return;
+  if (quizType === 'open') { confirmOpenQuiz(); return; }
+  if (!selectedQuizBtn) return;
   quizAnswered = true;
   const isCorrect = selectedQuizBtn.dataset.correct === '1';
   document.querySelectorAll('.quiz-opt').forEach(b => {
@@ -601,6 +664,32 @@ function confirmQuiz() {
     scores.wrong++; updateScoreRow();
     cb.textContent = 'הבנתי';
     cb.className = 'btn-continue';
+    cb.style.cssText = 'flex:1;padding:11px;border-radius:10px;border:1.5px solid #e53935;background:rgba(229,57,53,0.08);font-family:Heebo,sans-serif;font-size:13px;font-weight:700;cursor:pointer;color:#c62828;';
+    cb.onclick = () => { const wp=document.getElementById('wrong-popup');if(wp)wp.remove(); pickNext(); };
+    autoTimer = setTimeout(() => showWrongPopup(current.name), 500);
+  }
+}
+
+function confirmOpenQuiz() {
+  const input = document.getElementById('open-answer-input').value.trim();
+  if (!input) return;
+  quizAnswered = true;
+  document.getElementById('autocomplete-list').style.display = 'none';
+  const fb = document.getElementById('open-answer-feedback');
+  const cb = document.getElementById('confirm-btn');
+  const norm = s => s.toLowerCase().trim().replace(/\s+/g,' ');
+  const isCorrect = norm(input) === norm(current.name);
+  if (isCorrect) {
+    scores.correct++; updateScoreRow();
+    fb.textContent = '✓ נכון!'; fb.style.color = '#4caf50';
+    showCheckmark();
+    cb.textContent = 'הבא →'; cb.className = 'btn-continue ready';
+    cb.onclick = () => pickNext();
+    autoTimer = setTimeout(pickNext, 950);
+  } else {
+    scores.wrong++; updateScoreRow();
+    fb.textContent = '✗ שגוי'; fb.style.color = '#e53935';
+    cb.textContent = 'הבנתי';
     cb.style.cssText = 'flex:1;padding:11px;border-radius:10px;border:1.5px solid #e53935;background:rgba(229,57,53,0.08);font-family:Heebo,sans-serif;font-size:13px;font-weight:700;cursor:pointer;color:#c62828;';
     cb.onclick = () => { const wp=document.getElementById('wrong-popup');if(wp)wp.remove(); pickNext(); };
     autoTimer = setTimeout(() => showWrongPopup(current.name), 500);
@@ -911,9 +1000,9 @@ function resetSlider() {
     }
   }
 
-  track.addEventListener('touchstart', e => { e.stopPropagation(); startDrag(e.touches[0].clientX); }, {passive:true});
-  track.addEventListener('touchmove', e => { e.stopPropagation(); e.preventDefault(); moveDrag(e.touches[0].clientX); }, {passive:false});
-  track.addEventListener('touchend', e => { e.stopPropagation(); endDrag(); }, {passive:true});
+  track.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX); }, {passive:true});
+  track.addEventListener('touchmove', e => { e.preventDefault(); moveDrag(e.touches[0].clientX); }, {passive:false});
+  track.addEventListener('touchend', e => { endDrag(); }, {passive:true});
   track.addEventListener('mousedown', e => { startDrag(e.clientX); });
   document.addEventListener('mousemove', e => { moveDrag(e.clientX); });
   document.addEventListener('mouseup', () => { endDrag(); });
