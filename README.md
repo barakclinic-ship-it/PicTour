@@ -1,1 +1,1 @@
-# quiza-anatomy
+# PicTour
