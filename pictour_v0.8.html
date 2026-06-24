@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v0.7</title>
+<title>PicTour v0.8</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -241,7 +241,7 @@ header{
 
 <header style="direction:ltr;">
   <div style="display:flex;align-items:baseline;gap:0">
-    <span class="app-title">PicTour</span><span class="app-version">v0.7</span>
+    <span class="app-title">PicTour</span><span class="app-version">v0.8</span>
   </div>
   <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:4px;opacity:0.35;">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
@@ -331,8 +331,7 @@ header{
   <!-- FLIP SLIDER -->
   <div id="flip-slider-wrap" style="display:none;width:100%;padding:2px 0;flex-shrink:0;">
     <div id="flip-slider-track" style="width:100%;height:36px;background:#f0f0f0;border-radius:18px;position:relative;touch-action:none;user-select:none;">
-      <div id="flip-slider-thumb" style="position:absolute;top:4px;left:50%;margin-left:-14px;width:28px;height:28px;background:#111;border-radius:50%;will-change:left;"></div>
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#bbb;pointer-events:none;font-family:'Heebo',sans-serif;" id="flip-slider-label">← תמונה  |  תשובה →</div>
+      <div id="flip-slider-thumb" style="position:absolute;top:4px;left:4px;width:28px;height:28px;background:#111;border-radius:50%;will-change:left;"></div>
     </div>
   </div>
   <div class="quiz-grid" id="quiz-options" style="display:none"></div>
@@ -846,82 +845,56 @@ if (hintShown) {
 }
 
 // ── FLIP SLIDER ──
-// thumb starts in center. right = show answer, left = show image
+// thumb at left = image, drag right = answer
 function resetSlider() {
   const thumb = document.getElementById('flip-slider-thumb');
-  const label = document.getElementById('flip-slider-label');
   if (!thumb) return;
+  const isFlipped = document.getElementById('card-wrap').classList.contains('flipped');
   thumb.style.transition = 'left 0.3s';
   const track = document.getElementById('flip-slider-track');
-  const trackWidth = track ? track.getBoundingClientRect().width || 300 : 300;
-  const center = Math.round((trackWidth - 28 - 4) / 2 + 4);
-  thumb.style.left = center + 'px';
+  const tw = track ? track.getBoundingClientRect().width || 300 : 300;
+  thumb.style.left = isFlipped ? (tw - 28 - 4) + 'px' : '4px';
   thumb.style.background = '#111';
-  if (label) { label.textContent = '← תמונה  |  תשובה →'; label.style.color = '#bbb'; }
   setTimeout(() => { if (thumb) thumb.style.transition = ''; }, 300);
 }
 
 (function() {
-  let sliderDragging = false, sliderStartX = 0, trackWidth = 0, startLeft = 0;
+  let dragging = false, startX = 0, tw = 0, startLeft = 0;
   const track = document.getElementById('flip-slider-track');
   const thumb = document.getElementById('flip-slider-thumb');
-  const label = document.getElementById('flip-slider-label');
   if (!track || !thumb) return;
-
-  function getCenter(tw) { return Math.round((tw - 28 - 4) / 2 + 4); }
 
   function startDrag(clientX) {
     if (mode !== 'flash') return;
-    sliderDragging = true;
-    sliderStartX = clientX;
-    trackWidth = track.getBoundingClientRect().width;
-    startLeft = parseFloat(thumb.style.left) || getCenter(trackWidth);
+    dragging = true;
+    startX = clientX;
+    tw = track.getBoundingClientRect().width;
+    startLeft = parseFloat(thumb.style.left) || 4;
     thumb.style.transition = '';
   }
 
   function moveDrag(clientX) {
-    if (!sliderDragging) return;
-    const minLeft = 4;
-    const maxLeft = trackWidth - 28 - 4;
-    const dx = clientX - sliderStartX;
-    const left = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
+    if (!dragging) return;
+    const maxLeft = tw - 28 - 4;
+    const left = Math.max(4, Math.min(maxLeft, startLeft + (clientX - startX)));
     thumb.style.left = left + 'px';
-    const center = getCenter(trackWidth);
-    const pct = (left - center) / (maxLeft - center); // -1 to +1
-    if (pct > 0) {
-      thumb.style.background = `rgb(${Math.round(17+pct*60)},${Math.round(17+pct*154)},${Math.round(17+pct*17)})`;
-      if (label) label.style.color = '#4caf50';
-    } else {
-      const ap = Math.abs(pct);
-      thumb.style.background = `rgb(${Math.round(17+ap*200)},${Math.round(17)},${Math.round(17)})`;
-      if (label) label.style.color = '#e53935';
-    }
-    if (pct >= 0.85) endDrag('answer');
-    if (pct <= -0.85) endDrag('image');
+    const pct = (left - 4) / (maxLeft - 4);
+    thumb.style.background = pct > 0.5
+      ? `rgb(${Math.round(17+pct*60)},${Math.round(17+pct*154)},17)`
+      : '#111';
+    if (pct >= 0.92) endDrag('answer');
   }
 
   function endDrag(force) {
-    if (!sliderDragging && !force) return;
-    sliderDragging = false;
-    const maxLeft = trackWidth - 28 - 4;
-    const center = getCenter(trackWidth);
-    const curLeft = parseFloat(thumb.style.left) || center;
-    const pct = (curLeft - center) / (maxLeft - center);
-
-    if (force === 'answer' || pct >= 0.85) {
-      thumb.style.transition = 'left 0.2s';
+    if (!dragging && !force) return;
+    dragging = false;
+    const maxLeft = tw - 28 - 4;
+    const curLeft = parseFloat(thumb.style.left) || 4;
+    const pct = (curLeft - 4) / (maxLeft - 4);
+    if (force === 'answer' || pct >= 0.75) {
+      thumb.style.transition = 'left 0.15s';
       thumb.style.left = maxLeft + 'px';
-      setTimeout(() => {
-        document.getElementById('card-wrap').classList.add('flipped');
-        resetSlider();
-      }, 200);
-    } else if (force === 'image' || pct <= -0.85) {
-      thumb.style.transition = 'left 0.2s';
-      thumb.style.left = '4px';
-      setTimeout(() => {
-        document.getElementById('card-wrap').classList.remove('flipped');
-        resetSlider();
-      }, 200);
+      setTimeout(() => { document.getElementById('card-wrap').classList.add('flipped'); resetSlider(); }, 150);
     } else {
       resetSlider();
     }
@@ -946,7 +919,7 @@ loadTopics();
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div style="padding:10px 14px;background:#f8f8f8;border-radius:8px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:2px;">סליידר — הפוך כרטיסיה</div>
-        <div style="font-size:12px;color:#888;">ימינה = תשובה &nbsp;|&nbsp; שמאלה = תמונה</div>
+        <div style="font-size:12px;color:#888;">משוך ימינה לתשובה, חזור לתמונה</div>
       </div>
       <div style="padding:10px 14px;background:#f8f8f8;border-radius:8px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:2px;">2 נקישות — הגדלה</div>
