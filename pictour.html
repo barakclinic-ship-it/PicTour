@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v1.7</title>
+<title>PicTour v2.6</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -157,6 +157,9 @@ header{
 .card-front img{
   width:100%;height:100%;object-fit:contain;display:block;
   transform-origin:center center;will-change:transform;
+  image-rendering:-webkit-optimize-contrast;
+  image-rendering:crisp-edges;
+  -ms-interpolation-mode:bicubic;
 }
 .card-back{
   background:var(--surface);display:flex;flex-direction:column;
@@ -243,8 +246,11 @@ header{
 <body>
 
 <header style="direction:ltr;">
-  <div style="display:flex;align-items:baseline;gap:0">
-    <span class="app-title">PicTour</span><span class="app-version">v1.7</span>
+  <div style="display:flex;flex-direction:column;align-items:flex-start;gap:0">
+    <div style="display:flex;align-items:baseline;gap:0">
+      <span class="app-title">PicTour</span><span class="app-version">v2.6</span>
+    </div>
+    <span id="collection-label" style="font-size:11px;color:#ccc;display:none;margin-top:-1px;"></span>
   </div>
   <button id="home-btn" onclick="goHome()" style="display:none;background:none;border:none;cursor:pointer;padding:4px;opacity:0.35;">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
@@ -379,15 +385,19 @@ header{
 // ── CONFIG ──
 const GITHUB_API = 'https://api.github.com/repos/barakclinic-ship-it/PicTour/contents/images/anatomy';
 const BASE_URL   = 'https://barakclinic-ship-it.github.io/PicTour/images/anatomy';
+const COLLECTION_NAME = GITHUB_API.split('/').pop(); // "anatomy"
 const VALID_EXT  = /\.(jpg|jpeg|png|gif|webp)$/i;
 
 // ── STATE ──
 let topics = [], selectedTopics = new Set(), allCards = [];
 let deck = [], repeatQueue = [], current = null;
-let seen = 0, roundTotal = 0;
+let seen = 0, roundTotal = 0, originalRoundTotal = 0;
+let finalRepeatQueue = []; // כרטיסים שסומנו 'שאל שוב' בסיבוב האחרון
 let mode = 'quiz', quizType = 'closed', quizCount = 10;
 let scores = {correct:0, wrong:0};
 let quizHistory = [];
+let wrongCards = [];
+let currentTopicLabel = ''; // תווית הנושאים הנוכחית לציון // כרטיסים שנעשתה בהם טעות בסיבוב הנוכחי
 let quizAnswered = false, selectedQuizBtn = null;
 let autoTimer = null;
 let hintShown = localStorage.getItem('pictour_hint') === '1';
@@ -437,6 +447,8 @@ async function loadTopics() {
     if (!topics.length) throw new Error('לא נמצאו תמונות');
     renderTopics();
     showScreen('topic-screen');
+    const cl = document.getElementById('collection-label');
+    if (cl) { cl.textContent = COLLECTION_NAME; cl.style.display = ''; }
   } catch(err) {
     document.getElementById('loading-text').textContent = '❌ ' + err.message;
     const existing = document.getElementById('retry-btn');
@@ -493,6 +505,9 @@ function goToMode() {
       });
     });
   });
+  // בנה תווית נושאים
+  const names = [...selectedTopics].map(i => topics[i].name);
+  currentTopicLabel = names.length === topics.length ? 'הכל' : names.join(', ');
   showScreen('mode-screen');
 }
 
@@ -518,9 +533,11 @@ function startRound() {
   showScreen('app-screen');
   let pool = shuffle([...allCards]);
   if (quizCount < pool.length) pool = pool.slice(0, quizCount);
-  deck = pool; roundTotal = pool.length;
+  deck = pool; roundTotal = pool.length; originalRoundTotal = pool.length;
   repeatQueue = []; seen = 0;
   scores = {correct:0, wrong:0};
+  wrongCards = [];
+  finalRepeatQueue = [];
   updateScoreRow();
   pickNext();
 }
@@ -529,9 +546,9 @@ function pickNext() {
   if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
   const wp = document.getElementById('wrong-popup'); if (wp) wp.remove();
   if (deck.length === 0) {
-    if (mode === 'flash' && repeatQueue.length > 0) {
-      deck = shuffle([...repeatQueue]); repeatQueue = [];
-    } else { showDone(); return; }
+    finalRepeatQueue = [...repeatQueue];
+    repeatQueue = [];
+    showDone(); return;
   }
   const i = Math.floor(Math.random() * deck.length);
   current = deck.splice(i, 1)[0];
@@ -541,7 +558,17 @@ function pickNext() {
 
 function showCard() {
   resetZoom();
-  document.getElementById('card-wrap').classList.remove('flipped');
+  const cw = document.getElementById('card-wrap');
+  const ci = document.getElementById('card-inner');
+  // עצור אנימציה זמנית כדי שלא יראו את ה-flip
+  if (ci) { ci.style.transition = 'none'; }
+  cw.classList.remove('flipped');
+  // אפשר לדפדפן לצייר מחדש לפני שמחזירים את האנימציה
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (ci) ci.style.transition = '';
+    });
+  });
   document.getElementById('card-img').src = current.url;
   document.getElementById('card-answer').textContent = current.name;
   updateProgress();
@@ -562,6 +589,7 @@ function showCard() {
     quizAnswered = false; selectedQuizBtn = null;
     const cb = document.getElementById('confirm-btn');
     cb.className = 'btn-continue';
+    cb.style.cssText = '';
     cb.textContent = 'המשך'; cb.onclick = confirmQuiz;
 
     if (quizType === 'open') {
@@ -668,12 +696,13 @@ function confirmQuiz() {
   if (isCorrect) {
     scores.correct++; updateScoreRow();
     showCheckmark();
-    cb.textContent = 'הבא →';
+    cb.textContent = 'הבא';
     cb.className = 'btn-continue ready';
     cb.onclick = () => pickNext();
     autoTimer = setTimeout(pickNext, 950);
   } else {
     scores.wrong++; updateScoreRow();
+    wrongCards.push(current);
     cb.textContent = 'הבנתי';
     cb.className = 'btn-continue';
     cb.style.cssText = 'flex:1;padding:11px;border-radius:10px;border:1.5px solid #e53935;background:rgba(229,57,53,0.08);font-family:Heebo,sans-serif;font-size:13px;font-weight:700;cursor:pointer;color:#c62828;';
@@ -695,11 +724,12 @@ function confirmOpenQuiz() {
     scores.correct++; updateScoreRow();
     fb.textContent = '✓ נכון!'; fb.style.color = '#4caf50';
     showCheckmark();
-    cb.textContent = 'הבא →'; cb.className = 'btn-continue ready';
+    cb.textContent = 'הבא'; cb.className = 'btn-continue ready';
     cb.onclick = () => pickNext();
     autoTimer = setTimeout(pickNext, 950);
   } else {
     scores.wrong++; updateScoreRow();
+    wrongCards.push(current);
     fb.textContent = '✗ שגוי'; fb.style.color = '#e53935';
     cb.textContent = 'הבנתי';
     cb.style.cssText = 'flex:1;padding:11px;border-radius:10px;border:1.5px solid #e53935;background:rgba(229,57,53,0.08);font-family:Heebo,sans-serif;font-size:13px;font-weight:700;cursor:pointer;color:#c62828;';
@@ -709,6 +739,22 @@ function confirmOpenQuiz() {
 }
 
 // ── DONE ──
+function startRepeatMode() {
+  document.getElementById('repeat-popup').style.display = 'none';
+  allCards = [...finalRepeatQueue];
+  finalRepeatQueue = [];
+  quizCount = 9999;
+  startRound();
+}
+
+function startFixMode() {
+  document.getElementById('fix-popup').style.display = 'none';
+  allCards = [...wrongCards];
+  wrongCards = [];
+  quizCount = 9999;
+  startRound();
+}
+
 function showDone() {
   showScreen('done-screen');
   const counts = [10,20,30,40,50];
@@ -717,13 +763,24 @@ function showDone() {
     const total = scores.correct + scores.wrong;
     const pct = total ? Math.round(scores.correct/total*100) : 0;
     const emoji = pct===100?'👑':pct>=90?'🌟':pct>=75?'🔥':pct>=60?'💪':pct>=40?'😅':'💀';
-    quizHistory.push({count:roundTotal, pct, emoji});
+    quizHistory.push({count:roundTotal, pct, emoji, topic:currentTopicLabel, type:quizType==='open'?'פתוח':'סגור'});
     document.getElementById('done-score').textContent = pct + '%';
     document.getElementById('done-sub').textContent = scores.correct + ' נכון מתוך ' + total;
+
+    // הצע תיקון טעויות אם יש
+    if (wrongCards.length > 0) {
+      setTimeout(() => {
+        document.getElementById('fix-popup-count').textContent = wrongCards.length + ' שאלות שטעית בהן';
+        document.getElementById('fix-popup').style.display = 'flex';
+      }, 600);
+    }
     const hist = quizHistory.slice().reverse().map((h,i) =>
-      `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-        <span style="color:var(--muted)">${quizHistory.length-i}. ${h.count} שאלות</span>
-        <span style="font-weight:700">${h.pct}% ${h.emoji}</span>
+      `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:var(--muted)">${quizHistory.length-i}.</span>
+          <span style="font-weight:700;font-size:14px;">${h.pct}% ${h.emoji}</span>
+        </div>
+        <div style="color:#aaa;font-size:11px;margin-top:1px;">${h.topic} · ${h.count} שאלות · ${h.type}</div>
       </div>`).join('');
     document.getElementById('done-history').innerHTML = hist;
     let nextHtml = '';
@@ -734,7 +791,13 @@ function showDone() {
       `<button class="btn-secondary" onclick="goHome()">בחר נושא אחר</button>`;
   } else {
     document.getElementById('done-score').textContent = '✓';
-    document.getElementById('done-sub').textContent = 'עברת על ' + seen + ' כרטיסיות';
+    document.getElementById('done-sub').textContent = 'עברת על ' + originalRoundTotal + ' כרטיסיות';
+    if (finalRepeatQueue.length > 0) {
+      setTimeout(() => {
+        document.getElementById('repeat-popup-count').textContent = finalRepeatQueue.length + ' כרטיסים סומנו כ"שאל שוב"';
+        document.getElementById('repeat-popup').style.display = 'flex';
+      }, 500);
+    }
     document.getElementById('done-cta').innerHTML =
       `<button class="btn-primary" onclick="startCards()">שוב מהתחלה</button>` +
       `<button class="btn-secondary" onclick="goHome()">בחר נושא אחר</button>`;
@@ -974,14 +1037,34 @@ function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random
 
 loadTopics();
 </script>
+<!-- REPEAT UNCERTAIN POPUP -->
+<div id="repeat-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:400;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:300px;width:100%;display:flex;flex-direction:column;gap:14px;text-align:center;">
+    <div style="font-size:17px;font-weight:900;">כרטיסים לא בטוחים</div>
+    <div id="repeat-popup-count" style="font-size:13px;color:#888;"></div>
+    <button onclick="startRepeatMode()" style="width:100%;padding:13px;border-radius:10px;border:none;background:#111;color:#fff;font-family:'Heebo',sans-serif;font-size:15px;font-weight:700;cursor:pointer;">עבור עליהם שוב</button>
+    <button onclick="document.getElementById('repeat-popup').style.display='none'" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #e0e0e0;background:none;font-family:'Heebo',sans-serif;font-size:13px;color:#888;cursor:pointer;">דלג</button>
+  </div>
+</div>
+
+<!-- FIX MISTAKES POPUP -->
+<div id="fix-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:400;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:300px;width:100%;display:flex;flex-direction:column;gap:14px;text-align:center;">
+    <div style="font-size:17px;font-weight:900;">יש טעויות לתקן</div>
+    <div id="fix-popup-count" style="font-size:13px;color:#888;"></div>
+    <button onclick="startFixMode()" style="width:100%;padding:13px;border-radius:10px;border:none;background:#111;color:#fff;font-family:'Heebo',sans-serif;font-size:15px;font-weight:700;cursor:pointer;">בוא נתקן טעויות</button>
+    <button onclick="document.getElementById('fix-popup').style.display='none'" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #e0e0e0;background:none;font-family:'Heebo',sans-serif;font-size:13px;color:#888;cursor:pointer;">דלג</button>
+  </div>
+</div>
+
 <!-- TUTORIAL POPUP -->
 <div id="tutorial-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:500;align-items:center;justify-content:center;padding:24px;">
   <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:300px;width:100%;display:flex;flex-direction:column;gap:16px;">
     <div style="font-size:17px;font-weight:900;text-align:center;">הוראות שימוש</div>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div style="padding:10px 14px;background:#f8f8f8;border-radius:8px;">
-        <div style="font-size:13px;font-weight:700;margin-bottom:2px;">סליידר — הפוך כרטיסיה</div>
-        <div style="font-size:12px;color:#888;">משוך ימינה לתשובה, חזור לתמונה</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:2px;">כפתור עגול — הפוך כרטיסיה</div>
+        <div style="font-size:12px;color:#888;">לחץ להצגת התשובה וחזרה לתמונה</div>
       </div>
       <div style="padding:10px 14px;background:#f8f8f8;border-radius:8px;">
         <div style="font-size:13px;font-weight:700;margin-bottom:2px;">2 נקישות — הגדלה</div>
