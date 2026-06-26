@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v2.6</title>
+<title>PicTour v2.9</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -157,9 +157,7 @@ header{
 .card-front img{
   width:100%;height:100%;object-fit:contain;display:block;
   transform-origin:center center;will-change:transform;
-  image-rendering:-webkit-optimize-contrast;
-  image-rendering:crisp-edges;
-  -ms-interpolation-mode:bicubic;
+
 }
 .card-back{
   background:var(--surface);display:flex;flex-direction:column;
@@ -248,7 +246,7 @@ header{
 <header style="direction:ltr;">
   <div style="display:flex;flex-direction:column;align-items:flex-start;gap:0">
     <div style="display:flex;align-items:baseline;gap:0">
-      <span class="app-title">PicTour</span><span class="app-version">v2.6</span>
+      <span class="app-title" onclick="goHome()" style="cursor:pointer;">PicTour</span><span class="app-version">v2.9</span>
     </div>
     <span id="collection-label" style="font-size:11px;color:#ccc;display:none;margin-top:-1px;"></span>
   </div>
@@ -266,7 +264,7 @@ header{
 <!-- TOPIC -->
 <div id="topic-screen" class="screen">
   <div style="width:100%;padding:16px 16px 0;display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
-    <div class="screen-title">בחר נושא</div>
+    <div class="screen-title">בחר נושא ללמידה</div>
     <div class="screen-sub">אפשר לבחור יותר מאחד</div>
   </div>
   <div style="width:100%;flex:1;overflow-y:auto;padding:10px 16px 16px;">
@@ -280,28 +278,15 @@ header{
 
 <!-- MODE -->
 <div id="mode-screen" class="screen">
-  <div style="width:100%;padding:24px 16px;display:flex;flex-direction:column;gap:12px;">
+  <div style="width:100%;padding:20px 16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;">
     <div class="screen-title">איך תרצה ללמוד?</div>
-    <button class="mode-btn" onclick="startCards()">
-      כרטיסיות
-      <div class="mode-sub">הפוך, בדוק את עצמך</div>
-    </button>
-    <button class="mode-btn" onclick="goToQuizOptions()">
-      בוחן
-      <div class="mode-sub">שאלות + תשובות</div>
-    </button>
-  </div>
-</div>
-
-<!-- QUIZ OPTIONS -->
-<div id="quiz-options-screen" class="screen">
-  <div style="width:100%;padding:24px 16px;display:flex;flex-direction:column;gap:14px;">
-    <div class="screen-title">הגדרות בוחן</div>
-    <div class="section-label">סוג שאלות</div>
+    <!-- 3 mode buttons -->
     <div style="display:flex;flex-direction:column;gap:7px;">
-      <button class="qt-btn selected" id="qt-closed" onclick="setQuizType('closed')">סגור — 4 אפשרויות</button>
-      <button class="qt-btn" id="qt-open" onclick="setQuizType('open')">פתוח — הקלדה חופשית</button>
+      <button class="qt-btn selected" id="mode-cards" onclick="selectMode('flash')">כרטיסיות</button>
+      <button class="qt-btn" id="mode-closed" onclick="selectMode('closed')">בוחן סגור — 4 אפשרויות</button>
+      <button class="qt-btn" id="mode-open" onclick="selectMode('open')">בוחן פתוח — הקלדה חופשית</button>
     </div>
+    <!-- count -->
     <div class="section-label">כמה שאלות?</div>
     <div class="count-row">
       <button onclick="setQuizCount(10,this)" class="count-btn active">10</button>
@@ -311,10 +296,12 @@ header{
       <button onclick="setQuizCount(50,this)" class="count-btn">50</button>
       <button onclick="setQuizCount(9999,this)" class="count-btn">הכל</button>
     </div>
-    <button class="btn-primary" onclick="startQuiz()">התחל בוחן</button>
-    <button class="btn-secondary" onclick="showScreen('mode-screen')">חזרה</button>
+    <button class="btn-primary" id="start-btn" onclick="startSelected()">התחל</button>
   </div>
 </div>
+
+<!-- QUIZ OPTIONS (unused, kept for compatibility) -->
+<div id="quiz-options-screen" class="screen" style="display:none!important;"></div>
 
 <!-- APP -->
 <div id="app-screen" class="screen">
@@ -393,7 +380,7 @@ let topics = [], selectedTopics = new Set(), allCards = [];
 let deck = [], repeatQueue = [], current = null;
 let seen = 0, roundTotal = 0, originalRoundTotal = 0;
 let finalRepeatQueue = []; // כרטיסים שסומנו 'שאל שוב' בסיבוב האחרון
-let mode = 'quiz', quizType = 'closed', quizCount = 10;
+let mode = 'quiz', quizType = 'closed', quizCount = 10, originalQuizCount = 10;
 let scores = {correct:0, wrong:0};
 let quizHistory = [];
 let wrongCards = [];
@@ -508,22 +495,45 @@ function goToMode() {
   // בנה תווית נושאים
   const names = [...selectedTopics].map(i => topics[i].name);
   currentTopicLabel = names.length === topics.length ? 'הכל' : names.join(', ');
+  originalAllCards = [...allCards];
   showScreen('mode-screen');
 }
 
 // ── MODE ──
-function startCards() { mode = 'flash'; startRound(); showTutorial(); }
-function goToQuizOptions() { mode = 'quiz'; showScreen('quiz-options-screen'); }
-function startQuiz() { startRound(); }
+// ── UNIFIED MODE SELECTION ──
+let selectedModeKey = 'flash'; // 'flash', 'closed', 'open'
+
+function selectMode(key) {
+  selectedModeKey = key;
+  ['mode-cards','mode-closed','mode-open'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.classList.remove('selected');
+  });
+  const idMap = {flash:'mode-cards', closed:'mode-closed', open:'mode-open'};
+  const b = document.getElementById(idMap[key]); if (b) b.classList.add('selected');
+}
+
+function startSelected() {
+  originalQuizCount = quizCount;
+  if (selectedModeKey === 'flash') {
+    mode = 'flash'; startRound(); showTutorial();
+  } else {
+    mode = 'quiz';
+    quizType = selectedModeKey;
+    startRound();
+  }
+}
+
+// kept for compatibility
+function startCards() { allCards = [...originalAllCards]; quizCount = originalQuizCount; selectMode('flash'); startSelected(); }
+function goToQuizOptions() { showScreen('mode-screen'); }
+function startQuiz() { allCards = [...originalAllCards]; quizCount = originalQuizCount; startRound(); }
 
 function setQuizType(type) {
   quizType = type;
-  document.querySelectorAll('.qt-btn').forEach(b => b.classList.remove('selected'));
-  document.getElementById('qt-'+type).classList.add('selected');
 }
 
 function setQuizCount(n, btn) {
-  quizCount = n;
+  quizCount = n; originalQuizCount = n;
   document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 }
@@ -743,7 +753,7 @@ function startRepeatMode() {
   document.getElementById('repeat-popup').style.display = 'none';
   allCards = [...finalRepeatQueue];
   finalRepeatQueue = [];
-  quizCount = 9999;
+  quizCount = originalQuizCount;
   startRound();
 }
 
@@ -751,7 +761,7 @@ function startFixMode() {
   document.getElementById('fix-popup').style.display = 'none';
   allCards = [...wrongCards];
   wrongCards = [];
-  quizCount = 9999;
+  quizCount = originalQuizCount;
   startRound();
 }
 
@@ -790,8 +800,21 @@ function showDone() {
       `<button class="btn-primary" onclick="startQuiz()">שחק שוב — ${roundTotal} שאלות</button>` +
       `<button class="btn-secondary" onclick="goHome()">בחר נושא אחר</button>`;
   } else {
-    document.getElementById('done-score').textContent = '✓';
-    document.getElementById('done-sub').textContent = 'עברת על ' + originalRoundTotal + ' כרטיסיות';
+    // כרטיסיות
+    const knew = originalRoundTotal - finalRepeatQueue.length;
+    const emoji = finalRepeatQueue.length === 0 ? '👑' : finalRepeatQueue.length <= 2 ? '🌟' : finalRepeatQueue.length <= 5 ? '💪' : '📖';
+    quizHistory.push({count:originalRoundTotal, pct: Math.round(knew/originalRoundTotal*100), emoji, topic:currentTopicLabel, type:'כרטיסיות'});
+    document.getElementById('done-score').textContent = emoji;
+    document.getElementById('done-sub').textContent = 'עברת על ' + originalRoundTotal + ' כרטיסיות' + (finalRepeatQueue.length > 0 ? ' · ' + finalRepeatQueue.length + ' לחזרה' : ' · הכל ידוע!');
+    const hist = quizHistory.slice().reverse().map((h,i) =>
+      `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:var(--muted)">${quizHistory.length-i}.</span>
+          <span style="font-weight:700;font-size:14px;">${h.pct}% ${h.emoji}</span>
+        </div>
+        <div style="color:#aaa;font-size:11px;margin-top:1px;">${h.topic} · ${h.count} · ${h.type}</div>
+      </div>`).join('');
+    document.getElementById('done-history').innerHTML = hist;
     if (finalRepeatQueue.length > 0) {
       setTimeout(() => {
         document.getElementById('repeat-popup-count').textContent = finalRepeatQueue.length + ' כרטיסים סומנו כ"שאל שוב"';
