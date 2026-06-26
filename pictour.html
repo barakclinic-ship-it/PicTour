@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v3.0</title>
+<title>PicTour v3.2</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -246,7 +246,7 @@ header{
 <header style="direction:ltr;">
   <div style="display:flex;flex-direction:column;align-items:flex-start;gap:0">
     <div style="display:flex;align-items:baseline;gap:0">
-      <span class="app-title" onclick="goHome()" style="cursor:pointer;">PicTour</span><span class="app-version">v3.0</span>
+      <span class="app-title" onclick="goHome()" style="cursor:pointer;">PicTour</span><span class="app-version">v3.2</span>
     </div>
     <span id="collection-label" style="font-size:11px;color:#ccc;display:none;margin-top:-1px;"></span>
   </div>
@@ -425,7 +425,7 @@ async function loadTopics() {
           name: dir.name,
           images: files.map(f => ({
             file: dir.name + '/' + f.name,
-            name: f.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ').trim()
+            name: f.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ').replace(/\s+\d+$/,'').trim()
           }))
         });
       }
@@ -664,14 +664,22 @@ function selectAC(val) {
 
 // ── QUIZ OPTIONS ──
 function buildQuizOptions() {
-  const pool = allCards.filter(c => c !== current);
+  // סנן כרטיסים עם אותו שם כמו התשובה הנכונה (אותו מבנה, זווית אחרת)
+  const pool = allCards.filter(c => c !== current && c.name !== current.name);
   const stop = new Set(['of','the','and','or','a','an','left','right','upper','lower','anterior','posterior','medial','lateral','superior','inferior']);
   const kw = name => name.toLowerCase().split(/\s+/).filter(w => w.length>2 && !stop.has(w));
   const ckw = kw(current.name);
   const sim = c => kw(c.name).filter(w => ckw.includes(w)).length;
   const scored = shuffle([...pool]).map(c => ({c, s:sim(c)}));
   scored.sort((a,b) => b.s - a.s);
-  const opts = shuffle([current, ...scored.slice(0,3).map(s=>s.c)]);
+  // וודא שהדיסטרקטורים ייחודיים לפי שם
+  const seenNames = new Set([current.name]);
+  const distractors = [];
+  for (const {c} of scored) {
+    if (!seenNames.has(c.name)) { seenNames.add(c.name); distractors.push(c); }
+    if (distractors.length >= 3) break;
+  }
+  const opts = shuffle([current, ...distractors]);
   const container = document.getElementById('quiz-options');
   container.innerHTML = '';
   opts.forEach(opt => {
