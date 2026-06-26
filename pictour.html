@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicTour v3.2</title>
+<title>PicTour v3.3</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;900&display=swap');
 :root {
@@ -246,7 +246,7 @@ header{
 <header style="direction:ltr;">
   <div style="display:flex;flex-direction:column;align-items:flex-start;gap:0">
     <div style="display:flex;align-items:baseline;gap:0">
-      <span class="app-title" onclick="goHome()" style="cursor:pointer;">PicTour</span><span class="app-version">v3.2</span>
+      <span class="app-title" onclick="goHome()" style="cursor:pointer;">PicTour</span><span class="app-version">v3.3</span>
     </div>
     <span id="collection-label" style="font-size:11px;color:#ccc;display:none;margin-top:-1px;"></span>
   </div>
@@ -425,7 +425,7 @@ async function loadTopics() {
           name: dir.name,
           images: files.map(f => ({
             file: dir.name + '/' + f.name,
-            name: f.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ').replace(/\s+\d+$/,'').trim()
+            name: f.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ').replace(/\s*\(\d+\)\s*$/,'').trim()
           }))
         });
       }
